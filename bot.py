@@ -3,30 +3,65 @@ import re
 import string
 import random
 import sys
+
 import colorama
 from selenium import webdriver
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
 from random import randint
+
 from __constants.const import *
 from __banner.myBanner import bannerTop
 from __colors__.colors import *
+
+
+def _install_legacy_selenium_compat():
+    """Restore Selenium 3-style methods so the legacy bot code remains compatible with Selenium 4."""
+
+    def _element_lookup(method_name, by):
+        def _inner(self, value):
+            return getattr(self, method_name)(by, value)
+        return _inner
+
+    aliases = {
+        'find_element_by_id': By.ID,
+        'find_element_by_name': By.NAME,
+        'find_element_by_xpath': By.XPATH,
+        'find_element_by_class_name': By.CLASS_NAME,
+        'find_element_by_css_selector': By.CSS_SELECTOR,
+        'find_elements_by_class_name': By.CLASS_NAME,
+        'find_elements_by_tag_name': By.TAG_NAME,
+        'find_elements_by_xpath': By.XPATH,
+    }
+
+    for method_name, by in aliases.items():
+        if not hasattr(WebDriver, method_name):
+            setattr(WebDriver, method_name, _element_lookup(method_name, by))
+        if not hasattr(WebElement, method_name):
+            setattr(WebElement, method_name, _element_lookup(method_name, by))
+
+    # `find_elements_by_*` returns a list in Selenium 3, while Selenium 4's native API returns a list too.
+    # These aliases cover the old calls used throughout the legacy script.
+
+_install_legacy_selenium_compat()
 
 ######## This script is only for educational purpose ########
 ######## use it on your own RISK ########
 ######## I'm not responsible for any loss or damage ########
 ######## caused to you using this script ########
 
+
 def postFix(n):
     range_start = 10**(n-1)
     range_end = (10**n)-1
     return randint(range_start, range_end)
+
 
 def random_phone_num_generator():
     first = str(random.choice(country_codes))
@@ -35,6 +70,25 @@ def random_phone_num_generator():
     while last in ['1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888']:
         last = (str(random.randint(1, 9998)).zfill(4))
     return '{}-{}-{}'.format(first, second, last)
+
+
+def build_driver(browser_name):
+    browser_name = (browser_name or '').strip().lower()
+
+    if browser_name == 'chrome':
+        options = webdriver.ChromeOptions()
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--window-size=1400,1200')
+        return webdriver.Chrome(service=ChromeService(r'./webdriver/chromedriver'), options=options)
+
+    if browser_name == 'firefox':
+        options = webdriver.FirefoxOptions()
+        options.add_argument('--width=1400')
+        options.add_argument('--height=1200')
+        return webdriver.Firefox(service=FirefoxService(r'./webdriver/geckodriver'), options=options)
+
+    raise RuntimeError('Unsupported browser. Run setup.py first and choose chrome or firefox.')
+
 
 def start_bot(start_url, email, college, collegeID):
     studentPhone = random_phone_num_generator()
@@ -61,26 +115,20 @@ def start_bot(start_url, email, college, collegeID):
 
     middleName = random.choice(letters)
 
-    fp = open('prefBrowser.txt', 'r')
-    typex = fp.read()
+    try:
+        with open('prefBrowser.txt', 'r', encoding='utf-8') as fp:
+            typex = fp.read().strip()
+    except FileNotFoundError:
+        print(fr + 'Error - Run setup.py first')
+        sys.exit(1)
 
     try:
-        # For Chrome
-        if typex == 'chrome':
-            driver = webdriver.Chrome(executable_path=r'./webdriver/chromedriver')
-        # For Firefox
-        elif typex == 'firefox':
-            # cap = DesiredCapabilities().FIREFOX
-            # cap['marionette'] = True
-            driver = webdriver.Firefox(executable_path=r'./webdriver/geckodriver')
-        elif typex == '':
-            print(fr + 'Error - Run setup.py first')
-            exit()
+        driver = build_driver(typex)
     except Exception as e:
         time.sleep(0.4)
-        print('\n' + fr + 'Error - '+ str(e))
-        exit()
-    
+        print('\n' + fr + 'Error - ' + str(e))
+        sys.exit(1)
+
     driver.maximize_window()
     driver.get(start_url)
 
@@ -105,7 +153,7 @@ def start_bot(start_url, email, college, collegeID):
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located((By.ID, "inputMiddleName"))
     ).send_keys(middleName)
-    
+
     time.sleep(0.7)
 
     WebDriverWait(driver, 60).until(
@@ -115,7 +163,6 @@ def start_bot(start_url, email, college, collegeID):
     time.sleep(0.7)
 
     driver.find_element_by_xpath('//*[@id="hasOtherNameNo"]').click()
-
     driver.find_element_by_xpath('//*[@id="hasPreferredNameNo"]').click()
 
     time.sleep(0.7)
@@ -232,8 +279,6 @@ def start_bot(start_url, email, college, collegeID):
         EC.presence_of_element_located((By.ID, 'accountFormSubmit'))
     ).click()
 
-    # driver.find_element_by_xpath('//*[@id="accountFormSubmit"]').click()
-
     try:
         time.sleep(1)
         driver.find_element_by_xpath('//*[@id="messageFooterLabel"]').click()
@@ -266,7 +311,7 @@ def start_bot(start_url, email, college, collegeID):
 
     except Exception as e:
         print(e)
-    
+
     time.sleep(4)
 
     WebDriverWait(driver, 10).until(
@@ -286,7 +331,7 @@ def start_bot(start_url, email, college, collegeID):
         ).click()
 
         time.sleep(2)
-        
+
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, 'accountFormSubmit'))
         ).click()
@@ -330,8 +375,6 @@ def start_bot(start_url, email, college, collegeID):
 
     time.sleep(0.7)
 
-    ######### Question 1 #########
-
     WebDriverWait(driver, 60).until(
         EC.element_to_be_clickable(
             (By.CSS_SELECTOR, '#inputSecurityQuestion1 option[value="5"]'))
@@ -345,8 +388,6 @@ def start_bot(start_url, email, college, collegeID):
 
     time.sleep(1)
 
-    ######### Question 2 #########
-
     WebDriverWait(driver, 60).until(
         EC.element_to_be_clickable(
             (By.CSS_SELECTOR, '#inputSecurityQuestion2 option[value="6"]'))
@@ -354,14 +395,11 @@ def start_bot(start_url, email, college, collegeID):
 
     time.sleep(1)
 
-
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located((By.ID, 'inputSecurityAnswer2'))
     ).send_keys(LastName)
 
     time.sleep(1)
-
-    ######### Question 3 #########
 
     WebDriverWait(driver, 60).until(
         EC.element_to_be_clickable(
@@ -375,19 +413,18 @@ def start_bot(start_url, email, college, collegeID):
 
     print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fr + 'Please fill the captcha in webdriver to proceed further')
 
+    solved = 0
     for d in range(1, 200):
-
-        xx = driver.find_element_by_name('captchaResponse')
-
-        tdt = xx.get_attribute('value')
-
-        if tdt != '':
-            print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fg + 'Captcha Solved, Executing Further')
-            solved = 1
-            break
-        else:
-            time.sleep(2)
-            solved = 0
+        try:
+            xx = driver.find_element_by_name('captchaResponse')
+            tdt = xx.get_attribute('value')
+            if tdt != '':
+                print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fg + 'Captcha Solved, Executing Further')
+                solved = 1
+                break
+        except Exception:
+            pass
+        time.sleep(2)
 
     if solved == 1:
         time.sleep(2)
@@ -408,9 +445,9 @@ def start_bot(start_url, email, college, collegeID):
         ).click()
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Account Progress - 3/3' + fg + ' (Success)')
-        fp = open('myccAcc.txt', 'a')
+        fp = open('myccAcc.txt', 'a', encoding='utf-8')
         birthDay = str(randomMonth) + '/' + str(randomDay) + '/' + str(randomYear)
-        fp.write('Email - ' + email + ' Password - ' + pwd + ' UserName - ' + userName + ' First Name - ' + firstName + ' Middle Name - ' + middleName + ' Last Name - ' + LastName + ' College - ' + college + ' Pin - ' + str(pin) + ' Birthday - ' + birthDay +'\n\n')
+        fp.write('Email - ' + email + ' Password - ' + pwd + ' UserName - ' + userName + ' First Name - ' + firstName + ' Middle Name - ' + middleName + ' Last Name - ' + LastName + ' College - ' + college + ' BirthDay - ' + birthDay + '\n')
         fp.close()
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fg + 'Account Created Successfully, Details saved in myccAcc.txt, Filling Application Form Now')
 
@@ -450,7 +487,6 @@ def start_bot(start_url, email, college, collegeID):
 
         print(fg + ' (Success)')
 
-
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.ID, 'inputAddressSame'))
         ).click()
@@ -460,8 +496,6 @@ def start_bot(start_url, email, college, collegeID):
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="column2"]/div[6]/ol/li[2]/button'))
         ).click()
-
-        # Page 2
 
         dropdown_menu = Select(driver.find_element_by_name('appEducation.enrollmentStatus'))
         dropdown_menu.select_by_index(1)
@@ -539,7 +573,7 @@ def start_bot(start_url, email, college, collegeID):
         if len(it) < 5:
             print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fr + 'Changing State....')
             Select(driver.find_element_by_id('hs-input-sf-state')).select_by_value('CA')
-            
+
             search.clear()
             search.send_keys('high', Keys.ENTER)
             auto_complete = WebDriverWait(driver, 60).until(
@@ -557,7 +591,7 @@ def start_bot(start_url, email, college, collegeID):
             it[random.randint(4, 8)].click()
         except Exception as e:
             print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fr + str(e), 'can\'t click')
-        
+
         time.sleep(0.4)
 
         WebDriverWait(driver, 60).until(
@@ -598,12 +632,9 @@ def start_bot(start_url, email, college, collegeID):
             EC.presence_of_element_located((By.XPATH, '//*[@id="column2"]/div[14]/ol/li[2]/button'))
         ).click()
 
-
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 2/8' + fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 3/8', end='')
-
-        # Military
 
         time.sleep(4)
 
@@ -618,18 +649,16 @@ def start_bot(start_url, email, college, collegeID):
             EC.element_to_be_clickable(
                 (By.CSS_SELECTOR, '#inputMilitaryStatus option[value="1"]'))
         ).click()
-        
+
         time.sleep(1)
 
         WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, '//*[@id="column2"]/div[6]/ol/li[2]/button'))
         ).click()
-        
+
         print(fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 4/8', end='')
-
-        # Residency
 
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.ID, 'inputCaRes2YearsYes'))
@@ -653,13 +682,9 @@ def start_bot(start_url, email, college, collegeID):
             EC.presence_of_element_located((By.XPATH, '//*[@id="column2"]/div[7]/ol/li[2]/button'))
         ).click()
 
-        # driver.find_element_by_xpath('//*[@id="column2"]/div[7]/ol/li[2]/button').click()
-
         print(fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 5/8', end='')
-
-        # Intersts
 
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.ID, 'inputEnglishYes'))
@@ -697,7 +722,6 @@ def start_bot(start_url, email, college, collegeID):
 
         allElements = parentElement.find_elements_by_tag_name('li')
 
-
         rndList = [2, 1, 2, 2]
 
         occurance = 0
@@ -723,20 +747,16 @@ def start_bot(start_url, email, college, collegeID):
                     driver.execute_script("window.scrollBy(0, arguments[0]);", scroll_y_by)
                     time.sleep(0.4)
                     xx.click()
-        
+
         time.sleep(2)
 
         WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, '//*[@id="column2"]/div[9]/ol/li[2]/button'))
         ).click()
-        
-        # driver.find_element_by_xpath('//*[@id="column2"]/div[9]/ol/li[2]/button').click()
 
         print(fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 6/8', end='')
-
-        # Demographic 
 
         time.sleep(4)
 
@@ -794,16 +814,11 @@ def start_bot(start_url, email, college, collegeID):
             EC.presence_of_element_located((By.XPATH, '//*[@id="column2"]/div[7]/ol/li[2]/button'))
         ).click()
 
-        # driver.find_element_by_xpath('//*[@id="column2"]/div[7]/ol/li[2]/button').click()
-
         print(fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 7/8', end='')
 
-        # Supplemental
-
         if collegeID == 1:
-
             WebDriverWait(driver, 60).until(
                 EC.element_to_be_clickable(
                     (By.CSS_SELECTOR, '#_supp_MENU_1 option[value="AAAS"]'))
@@ -842,13 +857,10 @@ def start_bot(start_url, email, college, collegeID):
                 EC.presence_of_element_located((By.XPATH, '//*[@id="applyForm"]/main/div[3]/div[5]/ol/li[2]/button'))
             ).click()
 
-            # driver.find_element_by_xpath('//*[@id="applyForm"]/main/div[3]/div[5]/ol/li[2]/button').click()
-
         elif collegeID == 2:
             pass
 
         elif collegeID == 3:
-
             try:
                 element = WebDriverWait(driver, 60).until(
                     EC.presence_of_element_located((By.ID, "_supp_MENU_1"))
@@ -865,7 +877,6 @@ def start_bot(start_url, email, college, collegeID):
             driver.find_element_by_name("_eventId_continue").click()
 
         elif collegeID == 4:
-
             time.sleep(2)
             driver.find_element_by_id("YESNO_1_yes").click()
             driver.find_element_by_id("YESNO_2_yes").click()
@@ -922,12 +933,10 @@ def start_bot(start_url, email, college, collegeID):
             time.sleep(2)
 
             driver.find_element_by_name("_eventId_continue").click()
-        
+
         print(fg + ' (Success)')
 
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + 'Details Progress - 8/8', end='')
-
-        # Submission
 
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.ID, 'inputConsentYes'))
@@ -963,8 +972,7 @@ def start_bot(start_url, email, college, collegeID):
         driver.execute_script("window.scrollBy(0, arguments[0]);", scroll_y_by)
 
         time.sleep(1)
-        
-        # driver.find_element_by_xpath('//*[@id="submit-application-button"]').click()
+
         element.click()
 
         time.sleep(2)
@@ -977,6 +985,7 @@ def start_bot(start_url, email, college, collegeID):
 
     else:
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fr + 'Timeout while Checking for captcha')
+
 
 def main():
     sys.stdout.write(bannerTop())
@@ -991,9 +1000,9 @@ def main():
 
     for index, college in enumerate(allColleges):
         print(fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fy + str(index + 1) + ' - ' + random.choice(colors) + college)
-    
+
     isIDError = True
-    
+
     while isIDError != False:
         print('\n' + fc + sd + '[' + fm + sb + '*' + fc + sd + '] ' + fg + 'Enter college id for ex - 1 or 2 or 3.... : ', end='')
         userInput = int(input())
@@ -1018,8 +1027,9 @@ def main():
 
     time.sleep(1)
     reg_url = start_url + clg_ids[userInput]
-    
+
     start_bot(reg_url, userEmail, allColleges[userInput], userInput + 1)
+
 
 if __name__ == '__main__':
     main()
